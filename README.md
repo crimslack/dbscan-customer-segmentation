@@ -51,3 +51,8 @@ To identify distinct customer segments based on:
 
 ```bash
 pip install -r requirements.txt
+
+🛠️ Technologies Used
+Python 3
+
+pandas, numpy, matplotlib, scikit-learn
