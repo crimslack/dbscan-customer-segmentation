@@ -1,0 +1,138 @@
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import DBSCAN
+from sklearn.neighbors import NearestNeighbors
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
+
+# Read the data file
+df = pd.read_csv("marketing_campaign.csv", sep="\t")
+
+# Print the first 5 rows
+print(df.head())
+
+print("Number of rows:", df.shape[0])
+print("Number of columns:", df.shape[1])
+
+# Summary info about the dataset
+print(df.info())
+
+# Check for missing values in each column
+print(df.isnull().sum())
+
+# Drop rows with missing income values
+df_cleaned = df.dropna(subset=["Income"])
+
+# 1. Select features to use
+features = ["Income", "MntWines", "MntMeatProducts", "NumWebPurchases", "Recency"]
+
+# 2. Create a new DataFrame with selected features
+X = df_cleaned[features]
+
+# 3. Scale the features (standardization)
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Convert scaled array to DataFrame
+X_scaled_df = pd.DataFrame(X_scaled, columns=features)
+
+# Fit Nearest Neighbors model
+neighbors = NearestNeighbors(n_neighbors=5)
+neighbors_fit = neighbors.fit(X_scaled)
+distances, indices = neighbors_fit.kneighbors(X_scaled)
+
+# Sort distances to the 5th nearest neighbor
+distances = np.sort(distances[:, 4])
+
+# Plot KNN distance graph to determine optimal eps
+plt.figure(figsize=(8, 4))
+plt.plot(distances)
+plt.title("KNN Distance Graph (for eps estimation)")
+plt.xlabel("Data Points")
+plt.ylabel("Distance to 5th Nearest Neighbor")
+plt.grid(True)
+plt.show()
+
+# Define DBSCAN model
+dbscan = DBSCAN(eps=1.2, min_samples=5)
+
+# Fit the model and get cluster labels
+labels = dbscan.fit_predict(X_scaled)
+
+# Add cluster labels to the DataFrame
+X_scaled_df["Cluster"] = labels
+
+# Show first 10 rows with cluster labels
+print(X_scaled_df.head(10))
+
+# Calculate number of clusters and noise points
+n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+n_noise = list(labels).count(-1)
+
+print(f"Number of clusters: {n_clusters}")
+print(f"Number of noise (outlier) points: {n_noise}")
+
+# Try again with eps = 1.4
+dbscan = DBSCAN(eps=1.4, min_samples=5)
+labels = dbscan.fit_predict(X_scaled)
+
+X_scaled_df["Cluster"] = labels
+
+n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+n_noise = list(labels).count(-1)
+
+print(f"Number of clusters: {n_clusters}")
+print(f"Number of noise (outlier) points: {n_noise}")
+
+# Reduce dimensionality to 2D using PCA
+pca = PCA(n_components=2)
+pca_data = pca.fit_transform(X_scaled)
+
+# Visualize the DBSCAN results
+plt.figure(figsize=(8, 6))
+plt.scatter(pca_data[:, 0], pca_data[:, 1], c=labels, cmap="viridis", s=40)
+plt.title("Customer Segmentation with DBSCAN (eps = 1.4)", fontsize=14)
+plt.xlabel("PCA 1")
+plt.ylabel("PCA 2")
+plt.grid(True)
+plt.show()
+
+# Filter noise (outlier) customers
+outliers = X_scaled_df[X_scaled_df["Cluster"] == -1]
+
+# Show first 5 outliers
+print(outliers.head())
+
+# Get the indices of outliers
+outlier_indices = outliers.index
+
+# Retrieve original values of outliers from cleaned data
+original_outliers = df_cleaned.loc[outlier_indices]
+
+# Show first 5 original outliers with ID
+print(original_outliers[features + ["ID"]].head())
+
+# Remove noise points (label = -1) for evaluation
+mask = labels != -1
+X_valid = X_scaled[mask]
+labels_valid = labels[mask]
+
+# Only evaluate if at least 2 clusters exist
+n_valid_clusters = len(set(labels_valid))
+
+if n_valid_clusters >= 2:
+    # Silhouette Score
+    silhouette = silhouette_score(X_valid, labels_valid)
+    print(f"Silhouette Score: {silhouette:.4f}")
+
+    # Davies-Bouldin Index (lower is better)
+    db_index = davies_bouldin_score(X_valid, labels_valid)
+    print(f"Davies-Bouldin Index: {db_index:.4f}")
+
+    # Calinski-Harabasz Score (higher is better)
+    ch_score = calinski_harabasz_score(X_valid, labels_valid)
+    print(f"Calinski-Harabasz Score: {ch_score:.4f}")
+else:
+    print("Cannot evaluate clustering metrics: only one cluster found (excluding noise).")
